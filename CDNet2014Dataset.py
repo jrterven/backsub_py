@@ -19,16 +19,19 @@ from torch.utils.data import Dataset
 class CDNet2014Dataset(Dataset):
     """CDNet 2014 dataset."""
 
-    def __init__(self, root_dir, category, transform=None):
+    def __init__(self, root_dir, category, train, num_consecutive_frames=1,
+                 transform=None):
         """
         Args:
             root_dir (string): Directory with all the images.
             category (string): Category to use. E.g. 'baseline'
+            train (boolean): train or test dataset
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
         self.root_dir = root_dir
         self.category = category
+        self.num_frames = num_consecutive_frames
         self.transform = transform
 
         # build a list of images path and groundtruth paths with all the files
@@ -38,6 +41,7 @@ class CDNet2014Dataset(Dataset):
                        if os.path.isdir(os.path.join(category_path, file))]
         self.images_list = []
         self.gt_list = []
+        self.bg_list = []
         for vid in video_names:
             # get the temporal ROI
             f = open(os.path.join(root_dir, category, vid, 'temporalROI.txt'))
@@ -45,7 +49,14 @@ class CDNet2014Dataset(Dataset):
             f.close()
             t_roi = [int(n) for n in roi_str.split()]
 
-            # exted the lists with the elements from the current video
+            test_size = (t_roi[1] - t_roi[0])//10
+            if train:
+                t_roi[1] = t_roi[1] - test_size
+            else:
+                t_roi[0] = t_roi[1] - test_size
+
+            # extend the lists with the elements from the current video
+            data_vid_path = os.path.join(root_dir, category, vid)
             vid_path = os.path.join(root_dir, category, vid, 'input')
             gt_path = os.path.join(root_dir, category, vid, 'groundtruth')
             img_list = os.listdir(vid_path)
@@ -53,25 +64,45 @@ class CDNet2014Dataset(Dataset):
             gt_list = os.listdir(gt_path)
             gt_list.sort()
             self.images_list.extend([os.path.join(vid_path, x)
-                                     for x in img_list[t_roi[0]-1:t_roi[1]]])
+                                     for x in img_list[t_roi[0]:t_roi[1]]])
             self.gt_list.extend([os.path.join(gt_path, x)
-                                 for x in gt_list[t_roi[0]-1:t_roi[1]]])
+                                 for x in gt_list[t_roi[0]:t_roi[1]]])
+            self.bg_list.extend([os.path.join(data_vid_path, 'background.jpg')
+                                 for x in range(t_roi[0], t_roi[1])])
 
     def __len__(self):
         return len(self.images_list)
 
     def __getitem__(self, idx):
         img_name = self.images_list[idx]
+        bg_name = self.bg_list[idx]
         gt_name = self.gt_list[idx]
 
         image = cv2.imread(img_name)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+#        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        bg = cv2.imread(bg_name)
+        bg = cv2.cvtColor(bg, cv2.COLOR_BGR2GRAY)
+
         gt = cv2.imread(gt_name, cv2.IMREAD_GRAYSCALE)
-        image[gt == 85] = [0, 0, 0]
+        image[gt == 85] = 0
+        bg[gt == 85] = 0
+        
+        # calculate foreground
+        fg = cv2.absdiff(image,bg) # Absolute differences between the 2 images 
+        # set threshold to ignore small differences you can also use inrange function
+        _, fg = cv2.threshold(fg, 50, 255, 0)
+        
+        # concatenate image, background, and foreground
+        img_c = cv2.merge([image, bg, fg])
+        
         gt2 = gt.copy()
         gt2[gt == 85] = 0
         gt2[gt != 255] = 0
+        gt2[gt == 255] = 1
 
+        image = img_c.astype(np.float32) / 255
+        #gt2 = gt.astype(np.float32)
         sample = {'image': image, 'gt': gt2}
 
         if self.transform:
