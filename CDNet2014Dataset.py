@@ -3,6 +3,9 @@
 """
 Pytorch Dataloader for CDNet2014 dataset
 http://changedetection.net/
+This data loader loads 3 channel images containing: current frame, background,
+and foreground.
+This is used for our first model.
 
 Created on Sun Feb  4 07:01:42 2018
 
@@ -87,23 +90,23 @@ class CDNet2014Dataset(Dataset):
         gt = cv2.imread(gt_name, cv2.IMREAD_GRAYSCALE)
         image[gt == 85] = 0
         bg[gt == 85] = 0
-        
+
         # calculate foreground
-        fg = cv2.absdiff(image,bg) # Absolute differences between the 2 images 
-        # set threshold to ignore small differences you can also use inrange function
+        fg = cv2.absdiff(image, bg)
+        # set threshold to ignore small differences
         _, fg = cv2.threshold(fg, 50, 255, 0)
-        
+
         # concatenate image, background, and foreground
         img_c = cv2.merge([image, bg, fg])
-        
+
         gt2 = gt.copy()
         gt2[gt == 85] = 0
         gt2[gt != 255] = 0
         gt2[gt == 255] = 1
 
         image = img_c.astype(np.float32) / 255
-        #gt2 = gt.astype(np.float32)
-        sample = {'image': image, 'gt': gt2}
+
+        sample = {'image': image, 'label': gt2}
 
         if self.transform:
             sample = self.transform(sample)
@@ -125,7 +128,7 @@ class Rescale(object):
         self.output_size = output_size
 
     def __call__(self, sample):
-        image, gt = sample['image'], sample['gt']
+        image, gt = sample['image'], sample['label']
 
         h, w = image.shape[:2]
         if isinstance(self.output_size, int):
@@ -141,7 +144,7 @@ class Rescale(object):
         img = cv2.resize(image, (new_w, new_h))
         gt = cv2.resize(gt, (new_w, new_h))
 
-        return {'image': img, 'gt': gt}
+        return {'image': img, 'label': gt}
 
 
 class RandomCrop(object):
@@ -161,7 +164,7 @@ class RandomCrop(object):
             self.output_size = output_size
 
     def __call__(self, sample):
-        image, gt = sample['image'], sample['gt']
+        image, gt = sample['image'], sample['label']
 
         h, w = image.shape[:2]
         new_h, new_w = self.output_size
@@ -172,14 +175,14 @@ class RandomCrop(object):
         image = image[top: top + new_h, left: left + new_w]
         gt = gt[top: top + new_h, left: left + new_w]
 
-        return {'image': image, 'gt': gt}
+        return {'image': image, 'label': gt}
 
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        image, gt = sample['image'], sample['gt']
+        image, gt = sample['image'], sample['label']
 
         # swap color axis because
         # numpy image: H x W x C
@@ -188,4 +191,4 @@ class ToTensor(object):
         gt = np.expand_dims(gt, axis=2)
         gt = gt.transpose((2, 0, 1))
         return {'image': torch.from_numpy(image),
-                'gt': torch.from_numpy(gt)}
+                'label': torch.from_numpy(gt)}

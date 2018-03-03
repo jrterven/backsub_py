@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Training script for model1.py using CDNet2014Dataset.py
+Training script for model3d.py using CDNet2014Dataset3d.py
 
 Created on Feb 2018
 
@@ -14,35 +14,37 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from torch.autograd import Variable
 from torch.optim import lr_scheduler
-from CDNet2014Dataset import CDNet2014Dataset, Rescale, ToTensor
-from model1 import BackSubModel1
+from CDNet2014Dataset3d import CDNet2014Dataset3d, Rescale, ToTensor
+from model3d import BackSubModel3d
 from data_utils import count_labels_distribution
 
 
 def train(num_epochs, epochs_to_save, output_path, load_checkpoint, chk_num):
     """ Train model """
-    '''
-    LOAD DATASET
-    '''
-    train_data = CDNet2014Dataset(
+
+    # Load dataset
+    # Fist load train dataset to calculate data statistics
+    train_data = CDNet2014Dataset3d(
             root_dir='/datasets/backsub/cdnet2014/dataset',
             category='cameraJitter',
             train=True,
+            num_consecutive_frames=1,
             transform=transforms.Compose([
                                            Rescale((240, 320)),
                                            ToTensor()
                                            ]))
-    test_data = CDNet2014Dataset(
+    test_data = CDNet2014Dataset3d(
             root_dir='/datasets/backsub/cdnet2014/dataset',
             category='cameraJitter',
             train=False,
+            num_consecutive_frames=10,
             transform=transforms.Compose([
                                            Rescale((240, 320)),
                                            ToTensor()
                                            ]))
 
     train_loader = DataLoader(train_data, batch_size=100,
-                              shuffle=False, num_workers=4)
+                              shuffle=True, num_workers=4)
 
     test_loader = DataLoader(test_data, batch_size=1,
                              shuffle=False, num_workers=4)
@@ -56,19 +58,27 @@ def train(num_epochs, epochs_to_save, output_path, load_checkpoint, chk_num):
     print('Background pixel count:', bg_pix_count)
     foreground_weight = bg_pix_count/fg_pix_count
     print('Foreground weight:', foreground_weight)
+
     if torch.cuda.is_available():
         classes_weights = torch.Tensor([1.0, foreground_weight]).cuda()
     else:
         classes_weights = torch.Tensor([1.0, foreground_weight])
 
+    # Now load the train dataset for actual training
+    train_data = CDNet2014Dataset3d(
+            root_dir='/datasets/backsub/cdnet2014/dataset',
+            category='cameraJitter',
+            train=True,
+            num_consecutive_frames=10,
+            transform=transforms.Compose([
+                                           Rescale((240, 320)),
+                                           ToTensor()
+                                           ]))
     train_loader = DataLoader(train_data, batch_size=1,
                               shuffle=True, num_workers=4)
 
-    '''
-    INSTANTIATE MODEL CLASS
-    '''
-
-    model = BackSubModel1()
+    # Instantiate model class
+    model = BackSubModel3d()
 
     if torch.cuda.is_available():
         print('Using GPU:', torch.cuda.get_device_name(0))
@@ -77,14 +87,10 @@ def train(num_epochs, epochs_to_save, output_path, load_checkpoint, chk_num):
     else:
         print('NO GPU DETECTED!')
 
-    '''
-    INSTANTIATE LOSS CLASS
-    '''
+    # Instantiate loss class
     criterion = nn.NLLLoss(weight=classes_weights)
 
-    '''
-    STEP 6: INSTANTIATE OPTIMIZER CLASS
-    '''
+    # Instantiate optimizer
     learning_rate = 0.0001
 
     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate,
@@ -92,9 +98,7 @@ def train(num_epochs, epochs_to_save, output_path, load_checkpoint, chk_num):
     # Decay LR by a factor of 0.1 every 7 epochs
     exp_lr_scheduler = lr_scheduler.StepLR(optimizer, step_size=7, gamma=0.1)
 
-    '''
-    STEP 7: TRAIN THE MODEL
-    '''
+    # Train the model
     if load_checkpoint:
         print('Loading checkpoint ...')
         model.load_state_dict(torch.load(load_checkpoint))
@@ -107,20 +111,20 @@ def train(num_epochs, epochs_to_save, output_path, load_checkpoint, chk_num):
         exp_lr_scheduler.step()
 
         for i, sample_batch in enumerate(train_loader):
-            images = sample_batch['image']
-            labels = sample_batch['label']
+            images = sample_batch['images']
+            label = sample_batch['label']
 
             if torch.cuda.is_available():
                 images = Variable(images.cuda())
-                labels = Variable(labels.long().squeeze(1).cuda())
+                label = Variable(label.long().squeeze(1).cuda())
             else:
                 images = Variable(images)
-                labels = Variable(labels.long().squeeze(1))
+                label = Variable(label.long().squeeze(1))
 
             optimizer.zero_grad()    # Clear gradients w.r.t. parameters
             outputs = model(images)  # Forward pass to get output/logits
 
-            loss = criterion(outputs, labels)  # Compute Loss
+            loss = criterion(outputs, label)  # Compute Loss
             loss.backward()         # Getting gradients w.r.t. parameters
             optimizer.step()        # Updating parameters
 
@@ -139,8 +143,8 @@ def train(num_epochs, epochs_to_save, output_path, load_checkpoint, chk_num):
 
         # Iterate through test dataset
         for test_batch in test_loader:
-            images = test_batch['image']
-            labels = test_batch['label'].long()
+            images = test_batch['images']
+            label = test_batch['label'].long()
 
             if torch.cuda.is_available():
                 images = Variable(images.cuda())
@@ -154,13 +158,13 @@ def train(num_epochs, epochs_to_save, output_path, load_checkpoint, chk_num):
             _, predicted = torch.max(outputs.data, 1)
 
             # Total number of labels
-            total += (labels.size(2) * labels.size(3))
+            total += (label.size(2) * label.size(3))
 
             # Total correct predictions
             if torch.cuda.is_available():
-                correct += (predicted.cpu() == labels.cpu()).sum()
+                correct += (predicted.cpu() == label.cpu()).sum()
             else:
-                correct += (predicted == labels).sum()
+                correct += (predicted == label).sum()
 
         accuracy = 100 * correct / total
 
@@ -172,7 +176,8 @@ def train(num_epochs, epochs_to_save, output_path, load_checkpoint, chk_num):
         # Save model after every epochs_to_save epochs
         if epoch % epochs_to_save == 0:
             chk_name = os.path.join(output_path,
-                                    'model1_camerajitter_epoch' + str(epoch) + '.pkl')
+                                    'model3d_epoch' + str(epoch) +
+                                    '_%.2f' % accuracy + '.pkl')
             print('Saving checkpoint ',  chk_name)
             torch.save(model.state_dict(), chk_name)
 
@@ -186,7 +191,7 @@ def weighted_mse_loss(input, target, weights):
 
 if __name__ == "__main__":
     num_epochs = 100
-    epochs_to_save = 10
+    epochs_to_save = 2
     output_path = '/home2/backsub_repo/checkpoints'
     load_checkpoint = []
     chk_num = 0

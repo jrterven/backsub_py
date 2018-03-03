@@ -12,7 +12,7 @@ def count_labels_distribution(data_loader):
     bg_pix_count = 0
     fg_pix_count = 0
     for i, sample_batch in enumerate(data_loader):
-        labels = sample_batch['gt'][:, :, :, :].numpy()
+        labels = sample_batch['label'][:, :, :, :].numpy()
         bg_pix_count += (labels == 0).sum()
         fg_pix_count += (labels == 1).sum()
 

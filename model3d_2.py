@@ -11,103 +11,55 @@ import torch
 import torch.nn as nn
 
 
-class BackSubModel3d(nn.Module):
+class BackSubModel3d_2(nn.Module):
     def __init__(self):
         super(BackSubModel3d, self).__init__()
 
-        self.crp1_1 = nn.Sequential(
+        self.crp1 = nn.Sequential(
                 nn.Conv3d(3, 64, (3, 3, 3), stride=1, padding=(1, 1, 1)),
-                nn.BatchNorm3d(64),
                 nn.ReLU(),
                 nn.MaxPool3d(kernel_size=(1, 2, 2))
                 )
 
-        self.crp1_2 = nn.Sequential(
-                nn.Conv3d(3, 64, (3, 3, 3), stride=1, padding=1),
-                nn.BatchNorm3d(64),
-                nn.ReLU(),
-                nn.MaxPool3d(kernel_size=(1, 2, 2))
-                )
-        self.crp1_3 = nn.Sequential(
-                nn.Conv3d(3, 64, (3, 3, 3), stride=1, padding=1),
-                nn.BatchNorm3d(64),
-                nn.ReLU(),
-                nn.MaxPool3d(kernel_size=(1, 2, 2))
-                )
-        self.crp1_4 = nn.Sequential(
-                nn.Conv3d(3, 64, (3, 3, 3), stride=1, padding=1),
-                nn.BatchNorm3d(64),
-                nn.ReLU(),
-                nn.MaxPool3d(kernel_size=(1, 2, 2))
-                )
-
-        self.crp2_1 = nn.Sequential(
+        self.crp2 = nn.Sequential(
                 nn.Conv3d(64, 128, (3, 3, 3), stride=1, padding=1),
-                nn.BatchNorm3d(128),
                 nn.ReLU(),
                 nn.MaxPool3d(kernel_size=(1, 2, 2))
                 )
-        self.crp2_2 = nn.Sequential(
-                nn.Conv3d(64, 128, (3, 3, 3), stride=1, padding=1),
-                nn.BatchNorm3d(128),
-                nn.ReLU(),
-                nn.MaxPool3d(kernel_size=(1, 2, 2))
-                )
-
+        
         self.crp3 = nn.Sequential(
                 nn.Conv3d(128, 256, (16, 3, 3), stride=1, padding=(0, 1, 1)),
-                nn.BatchNorm3d(256),
                 nn.ReLU(),
                 nn.MaxPool3d(kernel_size=(1, 2, 2))
                 )
 
         self.crp4 = nn.Sequential(
                 nn.Conv2d(256, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512),
                 nn.ReLU(),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512),
                 nn.ReLU(),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512),
                 nn.ReLU(),
                 nn.MaxPool2d(kernel_size=2)
                 )
 
         self.cr = nn.Sequential(
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512),
                 nn.ReLU(),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512),
                 nn.ReLU(),
                 nn.Conv2d(512, 512, 3, stride=1, padding=1),
-                nn.BatchNorm2d(512),
                 nn.ReLU(),
                 )
 
 #        self.us1 = nn.ConvTranspose2d(256, 16, kernel_size=4,
 #                                      stride=2, padding=1)
-        self.us2 = nn.Sequential(
-                nn.ConvTranspose2d(256, 16, kernel_size=8,
-                                   stride=8, padding=0),
-                nn.BatchNorm2d(16),
-                nn.ReLU()
-                )
-        
-        self.us3 = nn.Sequential(
-                nn.ConvTranspose2d(512, 16, kernel_size=16,
-                                   stride=16, padding=0),
-                nn.BatchNorm2d(16),
-                nn.ReLU()
-                )
-                
-        self.us4 = nn.Sequential(
-                nn.ConvTranspose2d(512, 16, kernel_size=16,
-                                   stride=16, padding=0),
-                nn.BatchNorm2d(16),
-                nn.ReLU()
-                )                   
+        self.us2 = nn.ConvTranspose2d(256, 16, kernel_size=8,
+                                      stride=8, padding=0)
+        self.us3 = nn.ConvTranspose2d(512, 16, kernel_size=16,
+                                      stride=16, padding=0)
+        self.us4 = nn.ConvTranspose2d(512, 16, kernel_size=16,
+                                      stride=16, padding=0)
 
         self.fc = nn.Conv2d(48, 2, kernel_size=1)
         self.softmax = nn.LogSoftmax(1)

@@ -31,6 +31,7 @@ def test_vid(vid_path, chk):
     cap = cv2.VideoCapture(os.path.join(vid_path, 'video.mp4'))
     bg = cv2.imread(os.path.join(vid_path, 'background.jpg'))
     bg = cv2.cvtColor(bg, cv2.COLOR_BGR2GRAY)
+    bg = cv2.resize(bg, (320, 240))
 
     while(cap.isOpened()):
         ret, frame = cap.read()
@@ -69,7 +70,7 @@ def test_vid(vid_path, chk):
 
 
 if __name__ == "__main__":
-    chk_path = '/home2/backsub_repo/checkpoints/model1_epoch90.pkl'
-    vid_path = '/datasets/backsub/cdnet2014/dataset/baseline/highway'
+    chk_path = '/home2/backsub_repo/checkpoints/model3d/model1_camerajitter.pkl'
+    vid_path = '/datasets/backsub/cdnet2014/dataset/cameraJitter/badminton'
 
     test_vid(vid_path, chk_path)

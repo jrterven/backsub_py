@@ -3,8 +3,11 @@
 """
 Pytorch Dataloader for CDNet2014 dataset
 http://changedetection.net/
+This dataloader can load n samples with a single label (last frame label).
+This is used for models that take into account multiple frames.
+See test_model_3d.py for usage example.
 
-Created on Sun Feb  4 07:01:42 2018
+Created Feb 2018
 
 @author: Juan Terven
 """
@@ -42,32 +45,31 @@ class CDNet2014Dataset3d(Dataset):
         self.images_list = []
         self.gt_list = []
 
-#        #for vid in video_names:
-        vid = video_names[0]
+        for vid in video_names:
+            # get the temporal ROI
+            f = open(os.path.join(root_dir, category, vid, 'temporalROI.txt'))
+            roi_str = f.read()
+            f.close()
+            t_roi = [int(n) for n in roi_str.split()]
+            t_roi[0] -= self.num_frames + 1
 
-        # get the temporal ROI
-        f = open(os.path.join(root_dir, category, vid, 'temporalROI.txt'))
-        roi_str = f.read()
-        f.close()
-        t_roi = [int(n) for n in roi_str.split()]
+            test_size = (t_roi[1] - t_roi[0])//5
+            if train:
+                t_roi[1] = t_roi[1] - test_size
+            else:
+                t_roi[0] = t_roi[1] - test_size
 
-        test_size = (t_roi[1] - t_roi[0])//10
-        if train:
-            t_roi[1] = t_roi[1] - test_size
-        else:
-            t_roi[0] = t_roi[1] - test_size
-
-        # extend the lists with the elements from the current video
-        vid_path = os.path.join(root_dir, category, vid, 'input')
-        gt_path = os.path.join(root_dir, category, vid, 'groundtruth')
-        img_list = os.listdir(vid_path)
-        img_list.sort()
-        gt_list = os.listdir(gt_path)
-        gt_list.sort()
-        self.images_list.extend([os.path.join(vid_path, x)
-                                 for x in img_list[t_roi[0]:t_roi[1]]])
-        self.gt_list.extend([os.path.join(gt_path, x)
-                             for x in gt_list[t_roi[0]:t_roi[1]]])
+            # extend the lists with the elements from the current video
+            vid_path = os.path.join(root_dir, category, vid, 'input')
+            gt_path = os.path.join(root_dir, category, vid, 'groundtruth')
+            img_list = os.listdir(vid_path)
+            img_list.sort()
+            gt_list = os.listdir(gt_path)
+            gt_list.sort()
+            self.images_list.extend([os.path.join(vid_path, x)
+                                     for x in img_list[t_roi[0]:t_roi[1]]])
+            self.gt_list.extend([os.path.join(gt_path, x)
+                                 for x in gt_list[t_roi[0]:t_roi[1]]])
 
         self.data_len = len(self.images_list)
 
@@ -79,28 +81,25 @@ class CDNet2014Dataset3d(Dataset):
             idx = self.data_len - self.num_frames
 
         images = []
-        labels = []
         for frame_idx in range(self.num_frames):
-            img_name = self.images_list[idx]
-            gt_name = self.gt_list[idx]
+            img_name = self.images_list[idx + frame_idx]
+
             image = cv2.imread(img_name)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+            gt_name = self.gt_list[idx + frame_idx]
             gt = cv2.imread(gt_name, cv2.IMREAD_GRAYSCALE)
             image[gt == 85] = 0
 
-            gt2 = gt.copy()
-            gt2[gt == 85] = 0
-            gt2[gt != 255] = 0
-            gt2[gt == 255] = 1
-
             image = image.astype(np.float32) / 255
             images.append(image)
-            labels.append(gt2)
 
-        #images_np = np.array(images)
-        #labels_np = np.array(labels)
-        sample = {'images': images, 'labels': labels}
+        label = gt.copy()
+        label[gt == 85] = 0
+        label[gt != 255] = 0
+        label[gt == 255] = 1
+
+        sample = {'images': images, 'label': label}
 
         if self.transform:
             sample = self.transform(sample)
@@ -122,7 +121,7 @@ class Rescale(object):
         self.output_size = output_size
 
     def __call__(self, sample):
-        images, labels = sample['images'], sample['labels']
+        images, label = sample['images'], sample['label']
 
         for img_idx in range(len(images)):
             h, w = images[img_idx].shape[:2]
@@ -137,19 +136,18 @@ class Rescale(object):
             new_h, new_w = int(new_h), int(new_w)
 
             images[img_idx] = cv2.resize(images[img_idx], (new_w, new_h))
-            labels[img_idx] = cv2.resize(labels[img_idx], (new_w, new_h))
+        label = cv2.resize(label, (new_w, new_h))
 
         images_np = np.array(images)
-        labels_np = np.array(labels)
 
-        return {'images': images_np, 'labels': labels_np}
+        return {'images': images_np, 'label': label}
 
 
 class ToTensor(object):
     """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample):
-        images, labels = sample['images'], sample['labels']
+        images, label = sample['images'], sample['label']
 
         # reorder axis because
         # numpy images: D x H x W x C
@@ -157,9 +155,9 @@ class ToTensor(object):
         images = images.transpose((3, 0, 1, 2))
 
         # expand and reorder because
-        # labels images: D x H x W
-        # torch images: C x D x H x W
-        labels = np.expand_dims(labels, axis=3)
-        labels = labels.transpose((3, 0, 1, 2))
+        # labels images: H x W
+        # torch images: C x H x W
+        label = np.expand_dims(label, axis=2)
+        label = label.transpose((2, 0, 1))
         return {'images': torch.from_numpy(images),
-                'labels': torch.from_numpy(labels)}
+                'label': torch.from_numpy(label)}
